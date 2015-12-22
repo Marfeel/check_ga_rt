@@ -9,10 +9,11 @@ from apiclient.discovery import build
 
 class RealtimeAnalytics(nagiosplugin.Resource):
 
-    def __init__(self, credentials, filters, view):
+    def __init__(self, credentials, filters, view, dimensions):
         self.filters = filters
         self.view = view
         self.credentials = credentials
+        self.dimensions = dimensions
 
     def probe(self):
 
@@ -22,22 +23,36 @@ class RealtimeAnalytics(nagiosplugin.Resource):
             request = service.data().realtime().get(
                 ids="ga:%s"%(self.view),
                 metrics="rt:activeVisitors",
+                dimensions=self.dimensions,
                 filters=self.filters)
             response = request.execute()
-            activeVisitors =  int(response["totalsForAllResults"]["rt:activeVisitors"])
-            return [nagiosplugin.Metric("activeVisitors", activeVisitors, min=0,context='activeVisitors')]
+            yield nagiosplugin.Metric('TotalErrors',int(response["totalsForAllResults"]["rt:activeVisitors"]),min=0, context='activeVisitors')
+            for row in response["rows"]:
+                yield nagiosplugin.Metric(row[0],int(row[1]),min=0, context='activeVisitors')
+
+class LoadSummary(nagiosplugin.Summary):
+
+    def ok(self, results):
+        msgs = ''
+        for result in results:
+            msgs += '{0} \n'.format(result)
+        return msgs
 
 
+@nagiosplugin.guarded
 def main():
 
     argp = argparse.ArgumentParser(description=__doc__)
-    argp.add_argument('-w', '--warning', metavar='RANGE', default='',
+    argp.add_argument('-w', '--warning', type=int, default=0,
                       help='return warning if activeVisitors is outside RANGE')
-    argp.add_argument('-c', '--critical', metavar='RANGE', default='',
+    argp.add_argument('-c', '--critical', type=int, default=0,
                       help='return critical if activeVisitors is outside RANGE')
     argp.add_argument('-C', '--credentialsFile', action='store',required=True)
+    argp.add_argument('-t', '--timeout', type=int, default=20,
+                      help='abort after this number of seconds')
     argp.add_argument('-D', '--authData', action='store',required=True)
     argp.add_argument('-F', '--filters', action='store',required=True)
+    argp.add_argument('-d', '--dimensions', action='store',required=True)
     argp.add_argument('-V', '--view', action='store',required=True)
     argp.add_argument('-v', '--verbose', action='count', default=0,
                       help='increase output verbosity (use up to 3 times)')
@@ -46,9 +61,13 @@ def main():
     check = nagiosplugin.Check(
         RealtimeAnalytics(authenticate(args.authData, args.credentialsFile),
                           args.filters,
-                          args.view),
-        nagiosplugin.ScalarContext('activeVisitors',args.warning, args.critical))
-    check.main(verbose=args.verbose)
+                          args.view,
+                          args.dimensions),
+        nagiosplugin.ScalarContext('activeVisitors',
+                                   nagiosplugin.Range("%s" % args.warning),
+                                   nagiosplugin.Range("%s" % args.critical)),
+        LoadSummary())
+    check.main(verbose=args.verbose,timeout=args.timeout)
 
 
 
