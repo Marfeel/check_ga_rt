@@ -1,11 +1,13 @@
 import argparse
 import nagiosplugin
 import httplib2
+import time
 
 from oauth2client import file
 from oauth2client import client
 from oauth2client import tools
 from apiclient.discovery import build
+from apiclient.errors import HttpError
 
 class RealtimeAnalytics(nagiosplugin.Resource):
 
@@ -20,15 +22,24 @@ class RealtimeAnalytics(nagiosplugin.Resource):
             http = httplib2.Http()
             http = self.credentials.authorize(http)
             service = build('analytics', 'v3', http=http)
-            request = service.data().realtime().get(
-                ids="ga:%s"%(self.view),
-                metrics="rt:activeVisitors",
-                dimensions=self.dimensions,
-                filters=self.filters)
-            response = request.execute()
-            yield nagiosplugin.Metric('TotalErrors',int(response["totalsForAllResults"]["rt:activeVisitors"]),min=0, context='activeVisitors')
-            for row in response["rows"]:
-                yield nagiosplugin.Metric(row[0],int(row[1]),min=0, context='activeVisitors')
+
+            for n in range(0, 2):
+                try:
+                    request = service.data().realtime().get(
+                        ids="ga:%s"%(self.view),
+                        metrics="rt:activeVisitors",
+                        dimensions=self.dimensions,
+                        filters=self.filters)
+                    response = request.execute()
+                    yield nagiosplugin.Metric('TotalErrors',int(response["totalsForAllResults"]["rt:activeVisitors"]),min=0, context='activeVisitors')
+                    for row in response["rows"]:
+                        yield nagiosplugin.Metric(row[0],int(row[1]),min=0, context='activeVisitors')
+
+                    break
+
+                except HttpError, error:
+                    if error.resp.reason in ['backendError', 'internalServerError']:
+                        time.sleep(20)
 
 class LoadSummary(nagiosplugin.Summary):
 
