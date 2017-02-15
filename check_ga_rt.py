@@ -37,9 +37,9 @@ class RealtimeAnalytics(nagiosplugin.Resource):
                     totalErrors = 0
                     if self.events:
                         for event in self.events.split(","):
-                            print eventsMetrics[event]
-                            totalErrors += int(eventsMetrics[event])
-                            yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
+                            if event in eventsMetrics:
+                                totalErrors += int(eventsMetrics[event])
+                                yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
                     else:
                         for row in response["rows"]:
                             totalErrors += int(row[1])
