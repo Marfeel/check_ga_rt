@@ -11,11 +11,12 @@ from apiclient.errors import HttpError
 
 class RealtimeAnalytics(nagiosplugin.Resource):
 
-    def __init__(self, credentials, filters, view, dimensions):
+    def __init__(self, credentials, filters, view, dimensions, events):
         self.filters = filters
         self.view = view
         self.credentials = credentials
         self.dimensions = dimensions
+        self.events = events
 
     def probe(self):
 
@@ -27,13 +28,24 @@ class RealtimeAnalytics(nagiosplugin.Resource):
                 try:
                     request = service.data().realtime().get(
                         ids="ga:%s"%(self.view),
-                        metrics="rt:activeVisitors",
+                        metrics="rt:activeUsers",
                         dimensions=self.dimensions,
                         filters=self.filters)
                     response = request.execute()
-                    yield nagiosplugin.Metric('TotalErrors',int(response["totalsForAllResults"]["rt:activeVisitors"]),min=0, context='activeVisitors')
-                    for row in response["rows"]:
-                        yield nagiosplugin.Metric(row[0],int(row[1]),min=0, context='activeVisitors')
+                    eventsMetrics = { k[0]: k[1] for k in response["rows"]}
+
+                    totalErrors = 0
+                    if self.events:
+                        for event in self.events.split(","):
+                            print eventsMetrics[event]
+                            totalErrors += int(eventsMetrics[event])
+                            yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
+                    else:
+                        for row in response["rows"]:
+                            totalErrors += int(row[1])
+                            yield nagiosplugin.Metric(row[0],int(row[1]),min=0, context='activeUsers')
+
+                    yield nagiosplugin.Metric('TotalErrors',totalErrors,min=0, context='activeUsers')
 
                     break
 
@@ -55,9 +67,9 @@ def main():
 
     argp = argparse.ArgumentParser(description=__doc__)
     argp.add_argument('-w', '--warning', type=int, default=0,
-                      help='return warning if activeVisitors is outside RANGE')
+                      help='return warning if activeUsers is outside RANGE')
     argp.add_argument('-c', '--critical', type=int, default=0,
-                      help='return critical if activeVisitors is outside RANGE')
+                      help='return critical if activeUsers is outside RANGE')
     argp.add_argument('-C', '--credentialsFile', action='store',required=True)
     argp.add_argument('-t', '--timeout', type=int, default=20,
                       help='abort after this number of seconds')
@@ -65,6 +77,7 @@ def main():
     argp.add_argument('-F', '--filters', action='store',required=True)
     argp.add_argument('-d', '--dimensions', action='store',required=True)
     argp.add_argument('-V', '--view', action='store',required=True)
+    argp.add_argument('-e', '--events', action='store', required=False)
     argp.add_argument('-v', '--verbose', action='count', default=0,
                       help='increase output verbosity (use up to 3 times)')
 
@@ -73,8 +86,9 @@ def main():
         RealtimeAnalytics(authenticate(args.authData, args.credentialsFile),
                           args.filters,
                           args.view,
-                          args.dimensions),
-        nagiosplugin.ScalarContext('activeVisitors',
+                          args.dimensions,
+                          args.events),
+        nagiosplugin.ScalarContext('activeUsers',
                                    nagiosplugin.Range("%s" % args.warning),
                                    nagiosplugin.Range("%s" % args.critical)),
         LoadSummary())
