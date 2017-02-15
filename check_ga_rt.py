@@ -11,12 +11,13 @@ from apiclient.errors import HttpError
 
 class RealtimeAnalytics(nagiosplugin.Resource):
 
-    def __init__(self, credentials, filters, view, dimensions, events):
+    def __init__(self, credentials, filters, view, dimensions, events, reverse):
         self.filters = filters
         self.view = view
         self.credentials = credentials
         self.dimensions = dimensions
         self.events = events
+        self.reverse = reverse
 
     def probe(self):
 
@@ -36,10 +37,16 @@ class RealtimeAnalytics(nagiosplugin.Resource):
 
                     totalErrors = 0
                     if self.events:
-                        for event in self.events.split(","):
-                            if event in eventsMetrics:
-                                totalErrors += int(eventsMetrics[event])
-                                yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
+                        if not self.reverse:
+                            for event in self.events.split(","):
+                                if event in eventsMetrics:
+                                    totalErrors += int(eventsMetrics[event])
+                                    yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
+                        else:
+                            for event, value in eventsMetrics.items():
+                                if event not in self.events:
+                                    totalErrors += int(eventsMetrics[event])
+                                    yield nagiosplugin.Metric(event,int(eventsMetrics[event]),min=0, context='activeUsers')
                     else:
                         for row in response["rows"]:
                             totalErrors += int(row[1])
@@ -87,7 +94,8 @@ def main():
                           args.filters,
                           args.view,
                           args.dimensions,
-                          args.events),
+                          args.events if args.events[1] != '-' else args.events[2:],
+                          args.events[1] == '-'),
         nagiosplugin.ScalarContext('activeUsers',
                                    nagiosplugin.Range("%s" % args.warning),
                                    nagiosplugin.Range("%s" % args.critical)),
