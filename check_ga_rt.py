@@ -89,13 +89,21 @@ def main():
                       help='increase output verbosity (use up to 3 times)')
 
     args = argp.parse_args()
+
+    events = ''
+    reverse = False
+
+    if args.events:
+        events = args.events if args.events[1] != '-' else args.events[2:]
+        reverse = args.events[1] == '-'
+
     check = nagiosplugin.Check(
         RealtimeAnalytics(authenticate(args.authData, args.credentialsFile),
                           args.filters,
                           args.view,
                           args.dimensions,
-                          args.events if args.events[1] != '-' else args.events[2:],
-                          args.events[1] == '-'),
+                          events,
+                          reverse),
         nagiosplugin.ScalarContext('activeUsers',
                                    nagiosplugin.Range("%s" % args.warning),
                                    nagiosplugin.Range("%s" % args.critical)),
